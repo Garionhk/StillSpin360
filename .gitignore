@@ -1,0 +1,15 @@
+ComfyUI_windows_portable/
+downloads/
+outputs/
+installed.json
+prefs.json
+__pycache__/
+build/
+dist/
+release/
+engine.json
+
+# your own packaged copies and release zips
+StillSpin360 V*/
+StillSpin360 - V*/
+*.zip

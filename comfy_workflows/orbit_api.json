@@ -1,0 +1,81 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "_meta": {"title": "Diffusion Model"},
+    "inputs": {"unet_name": "minimax_h3_fl2va_pruned_w6a8.safetensors", "weight_dtype": "default"}
+  },
+  "2": {
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {"title": "Orbit LoRA"},
+    "inputs": {"model": ["1", 0], "lora_name": "minimax_h3_flf2v_lora_v1.safetensors", "strength_model": 1.0}
+  },
+  "3": {
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {"title": "Turbo LoRA"},
+    "inputs": {"model": ["2", 0], "lora_name": "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors", "strength_model": 1.0}
+  },
+  "4": {
+    "class_type": "CLIPLoader",
+    "_meta": {"title": "Text Encoder"},
+    "inputs": {"clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors", "type": "minimax", "device": "default"}
+  },
+  "5": {
+    "class_type": "VAELoader",
+    "_meta": {"title": "Video VAE"},
+    "inputs": {"vae_name": "minimax_h3_video_vae_int8_convrot.safetensors"}
+  },
+  "6": {
+    "class_type": "LoadImage",
+    "_meta": {"title": "Input Image"},
+    "inputs": {"image": "input.png"}
+  },
+  "7": {
+    "class_type": "MiniMaxH3ImageToVideo",
+    "_meta": {"title": "Orbit Conditioning"},
+    "inputs": {
+      "clip": ["4", 0],
+      "vae": ["5", 0],
+      "first_frame": ["6", 0],
+      "last_frame": ["6", 0],
+      "prompt": "",
+      "width": 768,
+      "height": 768,
+      "length": 73
+    }
+  },
+  "8": {
+    "class_type": "RandomNoise",
+    "_meta": {"title": "Seed"},
+    "inputs": {"noise_seed": 904231}
+  },
+  "9": {
+    "class_type": "KSamplerSelect",
+    "_meta": {"title": "Sampler"},
+    "inputs": {"sampler_name": "res_multistep"}
+  },
+  "10": {
+    "class_type": "BasicScheduler",
+    "_meta": {"title": "Scheduler"},
+    "inputs": {"model": ["3", 0], "scheduler": "simple", "steps": 28, "denoise": 1.0}
+  },
+  "11": {
+    "class_type": "BasicGuider",
+    "_meta": {"title": "Guider"},
+    "inputs": {"model": ["3", 0], "conditioning": ["7", 0]}
+  },
+  "12": {
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {"title": "Sample"},
+    "inputs": {"noise": ["8", 0], "guider": ["11", 0], "sampler": ["9", 0], "sigmas": ["10", 0], "latent_image": ["7", 1]}
+  },
+  "13": {
+    "class_type": "VAEDecode",
+    "_meta": {"title": "Decode"},
+    "inputs": {"samples": ["12", 0], "vae": ["5", 0]}
+  },
+  "14": {
+    "class_type": "SaveImage",
+    "_meta": {"title": "Save Frames"},
+    "inputs": {"images": ["13", 0], "filename_prefix": "StillSpin360/orbit"}
+  }
+}

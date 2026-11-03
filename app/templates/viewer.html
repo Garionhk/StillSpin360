@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<link rel="icon" type="image/png" href="__FAVICON__">
+<style>
+  :root {
+    --bg: #0c101d; --panel: #151a29; --line: #252c3e; --text: #f1f2f6; --muted: #8a93a6;
+    --accent: #ff7e02; --accent-ink: #1a0d00;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 16px; gap: 14px;
+  }
+  h1 { font-size: 15px; font-weight: 600; margin: 0; color: var(--muted); letter-spacing: .02em; }
+  .stage {
+    position: relative; width: min(92vw, 78vh, 900px); aspect-ratio: 1;
+    border-radius: 14px; overflow: hidden; background: #000;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5), 0 0 0 1px var(--line);
+    cursor: grab; touch-action: none; user-select: none;
+  }
+  .stage.dragging { cursor: grabbing; }
+  canvas { width: 100%; height: 100%; display: block; }
+  .loading {
+    position: absolute; inset: 0; display: grid; place-content: center; gap: 10px;
+    background: var(--bg); text-align: center; color: var(--muted);
+  }
+  .bar { width: 220px; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .1s; }
+  .angle {
+    position: absolute; right: 10px; bottom: 10px; padding: 3px 8px; border-radius: 6px;
+    background: rgba(0,0,0,.55); color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px;
+  }
+  .controls {
+    width: min(92vw, 900px); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  input[type=range] { flex: 1; min-width: 140px; accent-color: var(--accent); }
+  button {
+    background: var(--line); color: var(--text); border: 0; border-radius: 8px;
+    padding: 8px 12px; font: inherit; cursor: pointer; min-width: 44px;
+  }
+  button:hover { background: #313849; }
+  button.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .seg { display: inline-flex; border-radius: 8px; overflow: hidden; }
+  .seg button { border-radius: 0; }
+  label { color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+  .speed { width: 120px; flex: none; min-width: 0; }
+  .spacer { flex: 1; }
+  .hint { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>__TITLE__</h1>
+
+<div class="stage" id="stage">
+  <canvas id="view"></canvas>
+  <div class="loading" id="loading">
+    <div><span id="loadMsg">Loading frames…</span> <span id="loadText">0%</span></div>
+    <div class="bar"><div id="loadBar"></div></div>
+  </div>
+  <div class="angle" id="angle">0°</div>
+</div>
+
+<div class="controls">
+  <div class="row">
+    <button id="ccw" title="Rotate counter-clockwise (←)">⟲</button>
+    <input type="range" id="slider" min="0" value="0" step="1" aria-label="Rotation">
+    <button id="cw" title="Rotate clockwise (→)">⟳</button>
+  </div>
+  <div class="row">
+    <button id="play" title="Auto-rotate (Space)"></button>
+    <div class="seg" role="group" aria-label="Auto-rotate direction">
+      <button id="dirCw" class="on">Clockwise</button>
+      <button id="dirCcw">Counter-clockwise</button>
+    </div>
+    <label><span id="speedLabel">Speed</span> <input type="range" class="speed" id="speed" min="2" max="60" step="1"> <span id="speedText"></span></label>
+    <span class="spacer"></span>
+    <label><input type="checkbox" id="reverse"> <span id="reverseLabel">Reverse direction</span></label>
+  </div>
+  <div class="hint" id="hint">Drag the image or the slider to rotate · ← → step · Space toggles auto-rotate</div>
+</div>
+
+<script>
+const CONFIG = /*__CONFIG__*/{"title": "Orbit", "frames": [], "fps": 24, "reverse": false}/*__END__*/;
+
+// Interface text; StillSpin360 fills CONFIG.labels in the language the app is set to.
+const L = Object.assign({
+  loading: "Loading frames…", ccw: "Rotate counter-clockwise (←)", cw: "Rotate clockwise (→)",
+  play: "▶ Auto-rotate", pause: "❚❚ Pause", playTip: "Auto-rotate (Space)",
+  dirCw: "Clockwise", dirCcw: "Counter-clockwise", speed: "Speed", reverse: "Reverse direction",
+  hint: "Drag the image or the slider to rotate · ← → step · Space toggles auto-rotate",
+}, CONFIG.labels || {});
+document.getElementById("loadMsg").textContent = L.loading;
+document.getElementById("ccw").title = L.ccw;
+document.getElementById("cw").title = L.cw;
+document.getElementById("play").title = L.playTip;
+document.getElementById("dirCw").textContent = L.dirCw;
+document.getElementById("dirCcw").textContent = L.dirCcw;
+document.getElementById("speedLabel").textContent = L.speed;
+document.getElementById("reverseLabel").textContent = L.reverse;
+document.getElementById("hint").textContent = L.hint;
+
+const n = CONFIG.frames.length;
+const $ = id => document.getElementById(id);
+const canvas = $("view"), ctx = canvas.getContext("2d");
+const slider = $("slider"), speed = $("speed");
+const images = [];
+
+// `pos` counts clockwise steps around the orbit; `reverse` flips which frame order reads as clockwise.
+const state = { pos: 0, playing: false, dir: 1, fps: CONFIG.fps, reverse: !!CONFIG.reverse, held: false };
+
+const wrap = v => ((v % n) + n) % n;
+const frameAt = pos => state.reverse ? wrap(-pos) : wrap(pos);
+
+function render() {
+  const img = images[frameAt(state.pos)];
+  if (img && img.complete) {
+    if (canvas.width !== img.naturalWidth) { canvas.width = img.naturalWidth; canvas.height = img.naturalHeight; }
+    ctx.drawImage(img, 0, 0);
+  }
+  slider.value = state.pos;
+  $("angle").textContent = Math.round(state.pos / n * 360) + "°";
+}
+
+function setPos(p) { state.pos = wrap(Math.round(p)); render(); }
+function step(d) { setPos(state.pos + d); }
+
+// ---- auto-rotate
+let last = 0, acc = 0;
+function tick(t) {
+  if (state.playing && !state.held) {
+    acc += (t - last) / 1000;
+    const per = 1 / state.fps;
+    if (acc >= per) { const k = Math.floor(acc / per); acc -= k * per; step(k * state.dir); }
+  } else acc = 0;
+  last = t;
+  requestAnimationFrame(tick);
+}
+function setPlaying(on) {
+  state.playing = on;
+  $("play").classList.toggle("on", on);
+  $("play").textContent = on ? L.pause : L.play;
+}
+function setDir(d) {
+  state.dir = d;
+  $("dirCw").classList.toggle("on", d === 1);
+  $("dirCcw").classList.toggle("on", d === -1);
+}
+
+$("play").onclick = () => setPlaying(!state.playing);
+$("dirCw").onclick = () => { setDir(1); setPlaying(true); };
+$("dirCcw").onclick = () => { setDir(-1); setPlaying(true); };
+speed.oninput = () => { state.fps = +speed.value; $("speedText").textContent = speed.value + " fps"; };
+$("reverse").onchange = e => { state.reverse = e.target.checked; render(); };
+
+// ---- slider (pauses auto-rotate while held)
+slider.max = n - 1;
+slider.addEventListener("pointerdown", () => state.held = true);
+window.addEventListener("pointerup", () => state.held = false);
+slider.oninput = () => setPos(+slider.value);
+
+// ---- step buttons, repeating while held
+function holdRepeat(btn, d) {
+  let timer = null;
+  const stop = () => { clearTimeout(timer); clearInterval(timer); timer = null; state.held = false; };
+  btn.addEventListener("pointerdown", e => {
+    e.preventDefault(); state.held = true; step(d);
+    timer = setTimeout(() => { timer = setInterval(() => step(d), 1000 / state.fps); }, 350);
+  });
+  ["pointerup", "pointerleave", "pointercancel"].forEach(ev => btn.addEventListener(ev, stop));
+}
+holdRepeat($("cw"), 1);
+holdRepeat($("ccw"), -1);
+
+// ---- drag on the image: one stage width = one full turn, drag right = clockwise
+const stage = $("stage");
+let drag = null;
+stage.addEventListener("pointerdown", e => {
+  drag = { x: e.clientX, pos: state.pos };
+  state.held = true; stage.classList.add("dragging"); stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener("pointermove", e => {
+  if (!drag) return;
+  setPos(drag.pos + (e.clientX - drag.x) / stage.clientWidth * n);
+});
+const endDrag = () => { drag = null; state.held = false; stage.classList.remove("dragging"); };
+stage.addEventListener("pointerup", endDrag);
+stage.addEventListener("pointercancel", endDrag);
+
+// ---- keyboard
+window.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" && e.target.type !== "range") return;
+  if (e.key === "ArrowRight") { step(1); e.preventDefault(); }
+  else if (e.key === "ArrowLeft") { step(-1); e.preventDefault(); }
+  else if (e.key === " ") { setPlaying(!state.playing); e.preventDefault(); }
+});
+
+// ---- preload every frame before showing anything
+speed.value = state.fps; speed.oninput();
+$("reverse").checked = state.reverse;
+let loaded = 0;
+Promise.all(CONFIG.frames.map((src, i) => new Promise(resolve => {
+  const img = new Image();
+  img.onload = img.onerror = () => {
+    loaded++;
+    const pct = Math.round(loaded / n * 100);
+    $("loadText").textContent = pct + "%";
+    $("loadBar").style.width = pct + "%";
+    resolve();
+  };
+  img.src = src;
+  images[i] = img;
+}))).then(() => {
+  // Match the stage to the frames' aspect ratio so the orbit is never cropped or letterboxed.
+  const first = images.find(i => i.naturalWidth);
+  if (first) {
+    const r = first.naturalWidth / first.naturalHeight;
+    stage.style.aspectRatio = `${first.naturalWidth} / ${first.naturalHeight}`;
+    stage.style.width = `min(92vw, ${Math.round(900 * Math.max(1, r))}px, calc(78vh * ${r}))`;
+  }
+  $("loading").remove();
+  render();
+  setPlaying(true);
+  requestAnimationFrame(t => { last = t; tick(t); });
+});
+</script>
+</body>
+</html>
